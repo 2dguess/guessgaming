@@ -1,0 +1,9 @@
+services:
+  phase2-settlement-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phase2-settlement-worker
+    restart: unless-stopped
+    env_file:
+      - .env

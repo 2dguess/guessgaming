@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package gmaing.events.v1;
+
+option java_multiple_files = true;
+option java_package = "com.gmaing.events.v1";
+option java_outer_classname = "LiveV1Proto";
+
+// Transport envelope for all realtime events.
+message EventEnvelope {
+  string event_id = 1;          // UUID for dedupe.
+  int64 server_ts_ms = 2;       // Epoch milliseconds.
+  string source = 3;            // "social" | "live" | "betting".
+  string channel = 4;           // Logical channel name.
+  int64 seq = 5;                // Monotonic sequence per channel.
+
+  oneof payload {
+    SocialPostCreated social_post_created = 10;
+    SocialGiftSent social_gift_sent = 11;
+    LiveDrawStateUpdated live_draw_state_updated = 12;
+    LiveOddsUpdated live_odds_updated = 13;
+    BettingBetPlaced betting_bet_placed = 14;
+    BettingSettlementApplied betting_settlement_applied = 15;
+    SystemNotice system_notice = 16;
+    Heartbeat heartbeat = 17;
+  }
+}
+
+// ------------------------------
+// Social events
+// ------------------------------
+message SocialPostCreated {
+  string post_id = 1;
+  string author_user_id = 2;
+  string preview_text = 3;
+  int64 created_at_ms = 4;
+}
+
+message SocialGiftSent {
+  string post_id = 1;
+  string from_user_id = 2;
+  string to_user_id = 3;
+  string gift_item_id = 4;
+  int32 quantity = 5;
+  int64 total_value = 6;
+  int64 created_at_ms = 7;
+}
+
+// ------------------------------
+// 2D live viewer events
+// ------------------------------
+message LiveDrawStateUpdated {
+  string market = 1;            // e.g. "2D"
+  string session = 2;           // e.g. "AM", "PM"
+  string draw_id = 3;           // Current draw round id.
+  string state = 4;             // "open" | "countdown" | "closed" | "result"
+  int32 current_value = 5;      // Live value.
+  int32 previous_value = 6;
+  int64 result_at_ms = 7;       // Expected result timestamp.
+  int64 next_transition_ms = 8; // Next state transition timestamp.
+}
+
+message LiveOddsUpdated {
+  string market = 1;
+  string session = 2;
+  string draw_id = 3;
+  repeated OddsItem odds = 4;
+}
+
+message OddsItem {
+  int32 digit = 1;              // 0..99
+  double payout_multiplier = 2; // e.g. 80.0
+  bool suspended = 3;           // Temporarily disabled from betting.
+}
+
+// ------------------------------
+// Betting events
+// ------------------------------
+message BettingBetPlaced {
+  string bet_id = 1;
+  string user_id = 2;
+  int32 digit = 3;
+  int64 amount = 4;
+  string draw_id = 5;
+  string session = 6;
+  int64 placed_at_ms = 7;
+}
+
+message BettingSettlementApplied {
+  string run_id = 1;
+  string settlement_id = 2;
+  string draw_id = 3;
+  int32 winning_digit = 4;
+  int32 claimed_rows = 5;
+  int32 applied_rows = 6;
+  int64 admin_delta = 7;
+  int64 applied_at_ms = 8;
+}
+
+// ------------------------------
+// Common events
+// ------------------------------
+message SystemNotice {
+  string level = 1;             // "info" | "warn" | "error"
+  string code = 2;              // Domain-specific code.
+  string message = 3;
+}
+
+message Heartbeat {
+  int64 heartbeat_seq = 1;
+}

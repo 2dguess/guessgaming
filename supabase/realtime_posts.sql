@@ -1,0 +1,4 @@
+-- Live feed like counts: merge `posts.likes_count` in Flutter when other users like/unlike.
+-- Run once if not already in the publication (Dashboard → Database → Replication, or SQL):
+--
+--   ALTER PUBLICATION supabase_realtime ADD TABLE posts;
