@@ -47,6 +47,32 @@ docker compose restart
 docker compose down
 ```
 
+## Active/Standby Operations
+
+```bash
+chmod +x setup.sh deploy.sh promote.sh demote.sh healthcheck.sh
+```
+
+- Promote this VM as active worker:
+
+```bash
+./promote.sh
+```
+
+- Demote this VM to standby:
+
+```bash
+./demote.sh
+```
+
+- Quick health check (good for cron/alerts):
+
+```bash
+./healthcheck.sh
+```
+
+See `OPS_RUNBOOK.md` for active/standby failover flow.
+
 ## One-time VM bootstrap
 
 ```bash
