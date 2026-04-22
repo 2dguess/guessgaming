@@ -162,9 +162,6 @@ class SetIndexController extends StateNotifier<SetIndexState> {
 
   Future<void> _tickLiveQuote() async {
     if (_livePollInFlight) return;
-    if (!isMyanmarSetLiveFetchWindow()) {
-      return;
-    }
 
     final m = myanmarWallClockNow();
     final t = m.hour * 60 + m.minute;
@@ -175,12 +172,14 @@ class SetIndexController extends StateNotifier<SetIndexState> {
 
     final inMorning = t >= morningStart && t < morningEndExclusive;
     final inAfternoon = t >= afternoonStart && t < afternoonEndExclusive;
-    if (!inMorning && !inAfternoon) return;
+    final writeToMorning = inMorning || (!inMorning && !inAfternoon && t < afternoonStart);
 
     _livePollInFlight = true;
     try {
+      // During live trading windows, prefer direct API quotes for freshness.
+      // CDN is kept as a fallback when API is temporarily unavailable.
       final data =
-          await _apiService.fetchLiveFromCdn() ?? await _apiService.fetchLiveSETData();
+          await _apiService.fetchLiveSETData() ?? await _apiService.fetchLiveFromCdn();
       if (!_pushUiUpdates) return;
 
       if (data != null) {
@@ -188,54 +187,35 @@ class SetIndexController extends StateNotifier<SetIndexState> {
         final ix = data['set_index'] as double;
         final dg = data['result_digit'] as int;
         final now = DateTime.now();
-
-        if (inMorning) {
-          state = SetIndexState(
-            latestResult: state.latestResult,
-            todayResults: state.todayResults,
-            isLoading: state.isLoading,
-            error: state.error,
-            lastFetchTime: state.lastFetchTime,
-            morningLiveSetValue: sv,
-            morningLiveSetIndex: ix,
-            morningLiveResultDigit: dg,
-            morningLiveUpdatedAt: now,
-            morningLiveError: null,
-            afternoonLiveSetValue: state.afternoonLiveSetValue,
-            afternoonLiveSetIndex: state.afternoonLiveSetIndex,
-            afternoonLiveResultDigit: state.afternoonLiveResultDigit,
-            afternoonLiveUpdatedAt: state.afternoonLiveUpdatedAt,
-            afternoonLiveError: state.afternoonLiveError,
-          );
-        } else {
-          state = SetIndexState(
-            latestResult: state.latestResult,
-            todayResults: state.todayResults,
-            isLoading: state.isLoading,
-            error: state.error,
-            lastFetchTime: state.lastFetchTime,
-            morningLiveSetValue: state.morningLiveSetValue,
-            morningLiveSetIndex: state.morningLiveSetIndex,
-            morningLiveResultDigit: state.morningLiveResultDigit,
-            morningLiveUpdatedAt: state.morningLiveUpdatedAt,
-            morningLiveError: state.morningLiveError,
-            afternoonLiveSetValue: sv,
-            afternoonLiveSetIndex: ix,
-            afternoonLiveResultDigit: dg,
-            afternoonLiveUpdatedAt: now,
-            afternoonLiveError: null,
-          );
-        }
+        state = SetIndexState(
+          latestResult: state.latestResult,
+          todayResults: state.todayResults,
+          isLoading: state.isLoading,
+          error: state.error,
+          lastFetchTime: state.lastFetchTime,
+          // Keep both live snapshots synced to latest quote so UI stays aligned
+          // with the terminal/live scraper feed regardless of session branch.
+          morningLiveSetValue: sv,
+          morningLiveSetIndex: ix,
+          morningLiveResultDigit: dg,
+          morningLiveUpdatedAt: now,
+          morningLiveError: null,
+          afternoonLiveSetValue: sv,
+          afternoonLiveSetIndex: ix,
+          afternoonLiveResultDigit: dg,
+          afternoonLiveUpdatedAt: now,
+          afternoonLiveError: null,
+        );
       } else {
         _setLiveErrorForActiveSession(
-          inMorning: inMorning,
+          inMorning: writeToMorning,
           message: 'Live quote unavailable',
         );
       }
     } catch (e) {
       if (!_pushUiUpdates) return;
       _setLiveErrorForActiveSession(
-        inMorning: inMorning,
+        inMorning: writeToMorning,
         message: e.toString(),
       );
     } finally {

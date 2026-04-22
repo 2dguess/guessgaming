@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
@@ -219,12 +220,8 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
     if (!mounted) return;
     final notifier = ref.read(setIndexControllerProvider.notifier);
     notifier.checkBangkokDateRollover();
-    if (isMyanmarSetLiveFetchWindow()) {
-      notifier.startLivePolling();
-    } else {
-      notifier.stopLivePolling();
-      // Keep frozen session snapshots for 12:01 / 4:30 cards until Bangkok midnight.
-    }
+    // Keep polling active so the viewer reflects latest live quotes directly.
+    notifier.startLivePolling();
   }
 
   void _resumeLiveViewer() {
@@ -492,7 +489,7 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
                 setValue != null
                     ? (isAnimating
                         ? AnimatedNumberDisplay(
-                            number: setValue,
+                            number: setValue.replaceAll(',', ''),
                             isAnimating: true,
                             fontSize: 18,
                             textColor: AppTheme.textPrimary,
@@ -508,7 +505,7 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
                 setIndex != null
                     ? (isAnimating
                         ? AnimatedNumberDisplay(
-                            number: setIndex,
+                            number: setIndex.replaceAll(',', ''),
                             isAnimating: true,
                             fontSize: 18,
                             textColor: AppTheme.textPrimary,
@@ -571,6 +568,37 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
 
     final dbDigit = latestResult?.resultDigit;
 
+    final DateTime? morningAt = setIndexState.morningLiveUpdatedAt;
+    final DateTime? afternoonAt = setIndexState.afternoonLiveUpdatedAt;
+    final bool hasMorning = morningAt != null;
+    final bool hasAfternoon = afternoonAt != null;
+    final bool useMorningLive = hasMorning &&
+        (!hasAfternoon || morningAt!.isAfter(afternoonAt!));
+    final bool useAfternoonLive = hasAfternoon &&
+        (!hasMorning || afternoonAt!.isAfter(morningAt!));
+    final String liveSource = useMorningLive
+        ? 'morning-live'
+        : useAfternoonLive
+            ? 'afternoon-live'
+            : 'none';
+
+    final double? currentLiveSetValue = useMorningLive
+        ? setIndexState.morningLiveSetValue
+        : useAfternoonLive
+            ? setIndexState.afternoonLiveSetValue
+            : setIndexState.morningLiveSetValue ?? setIndexState.afternoonLiveSetValue;
+    final double? currentLiveSetIndex = useMorningLive
+        ? setIndexState.morningLiveSetIndex
+        : useAfternoonLive
+            ? setIndexState.afternoonLiveSetIndex
+            : setIndexState.morningLiveSetIndex ?? setIndexState.afternoonLiveSetIndex;
+    final int? currentLiveDigit = useMorningLive
+        ? setIndexState.morningLiveResultDigit
+        : useAfternoonLive
+            ? setIndexState.afternoonLiveResultDigit
+            : setIndexState.morningLiveResultDigit ??
+                setIndexState.afternoonLiveResultDigit;
+
     int? heroDigit;
     if (showDash121) {
       heroDigit = null;
@@ -579,8 +607,7 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
     } else if (anim430 && inSetSessionMmt) {
       heroDigit = setIndexState.afternoonLiveResultDigit ?? dbDigit;
     } else {
-      heroDigit = setIndexState.afternoonLiveResultDigit ??
-          setIndexState.morningLiveResultDigit ??
+      heroDigit = currentLiveDigit ??
           row1630?.resultDigit ??
           row1201?.resultDigit ??
           dbDigit;
@@ -601,40 +628,25 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
             ? '${latestResult.drawDate.toIso8601String().split('T').first} ${latestResult.drawTime.substring(0, 5)}:00'
             : '--');
 
-    // 12:01 card: `--` until 09:30; live 09:30–12:01; then frozen. 2D = same digit as morning / 12:01 draw.
-    String? sv12;
-    String? ix12;
-    if (showDash121) {
-      sv12 = null;
-      ix12 = null;
-    } else {
-      sv12 = setIndexState.morningLiveSetValue != null
-          ? _quoteFmt.format(setIndexState.morningLiveSetValue!)
-          : (row1201 != null ? _quoteFmt.format(row1201.setValue) : null);
-      ix12 = setIndexState.morningLiveSetIndex != null
-          ? _quoteFmt.format(setIndexState.morningLiveSetIndex!)
-          : (row1201 != null ? _quoteFmt.format(row1201.setIndex) : null);
-    }
+    // 12:01 card mirrors 4:30 card data source as requested.
+    final String? sv12 = setIndexState.afternoonLiveSetValue != null
+        ? _quoteFmt.format(setIndexState.afternoonLiveSetValue!)
+        : (row1630 != null ? _quoteFmt.format(row1630.setValue) : null);
+    final String? ix12 = setIndexState.afternoonLiveSetIndex != null
+        ? _quoteFmt.format(setIndexState.afternoonLiveSetIndex!)
+        : (row1630 != null ? _quoteFmt.format(row1630.setIndex) : null);
 
-    final int? digit12Source = showDash121
-        ? null
-        : (setIndexState.morningLiveResultDigit ?? row1201?.resultDigit);
+    final int? digit12Source =
+        setIndexState.afternoonLiveResultDigit ?? row1630?.resultDigit;
     final String? resultDigit12 =
         digit12Source != null ? digit12Source.toString().padLeft(2, '0') : null;
 
-    String? sv43;
-    String? ix43;
-    if (showDash430) {
-      sv43 = null;
-      ix43 = null;
-    } else {
-      sv43 = setIndexState.afternoonLiveSetValue != null
-          ? _quoteFmt.format(setIndexState.afternoonLiveSetValue!)
-          : (row1630 != null ? _quoteFmt.format(row1630.setValue) : null);
-      ix43 = setIndexState.afternoonLiveSetIndex != null
-          ? _quoteFmt.format(setIndexState.afternoonLiveSetIndex!)
-          : (row1630 != null ? _quoteFmt.format(row1630.setIndex) : null);
-    }
+    final String? sv43 = setIndexState.afternoonLiveSetValue != null
+        ? _quoteFmt.format(setIndexState.afternoonLiveSetValue!)
+        : (row1630 != null ? _quoteFmt.format(row1630.setValue) : null);
+    final String? ix43 = setIndexState.afternoonLiveSetIndex != null
+        ? _quoteFmt.format(setIndexState.afternoonLiveSetIndex!)
+        : (row1630 != null ? _quoteFmt.format(row1630.setIndex) : null);
 
     final Widget bigNumberWidget = Text(
       bigNumber,
@@ -716,6 +728,18 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
                     ),
                   ],
                 ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'debug source=$liveSource set=${currentLiveSetValue?.toStringAsFixed(2) ?? '--'} value=${currentLiveSetIndex?.toStringAsFixed(2) ?? '--'}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -726,8 +750,9 @@ class _Live2DResultViewerState extends ConsumerState<_Live2DResultViewer> {
             setValue: sv12,
             setIndex: ix12,
             resultDigit: resultDigit12,
-            quoteHardBlink: anim121 && !showDash121,
-            isAnimating: anim121 && !showDash121,
+            // Match 4:30 card behavior exactly (same source + same animation gating).
+            quoteHardBlink: anim430 && !showDash430,
+            isAnimating: anim430 && !showDash430,
           ),
           
           const SizedBox(height: AppTheme.paddingM),
